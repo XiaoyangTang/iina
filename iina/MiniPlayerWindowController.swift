@@ -12,7 +12,7 @@ fileprivate let DefaultPlaylistHeight: CGFloat = 300
 fileprivate let AutoHidePlaylistThreshold: CGFloat = 200
 fileprivate let AnimationDurationShowControl: TimeInterval = 0.2
 
-class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPopoverDelegate {
+class MiniPlayerWindowController: PlayerWindowController, NSPopoverDelegate {
 
   override var windowNibName: NSNib.Name {
     return NSNib.Name("MiniPlayerWindowController")
@@ -22,6 +22,10 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
     let fontSize = NSFont.systemFontSize(for: .mini)
     return NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular)
   }()
+  
+  override var videoView: VideoView {
+    return player.mainWindow.videoView
+  }
 
   // MARK: - Observed user defaults
 
@@ -36,6 +40,7 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
 
   @IBOutlet weak var volumeButton: NSButton!
   @IBOutlet var volumePopover: NSPopover!
+  @IBOutlet weak var volumeSliderView: NSView!
   @IBOutlet weak var backgroundView: NSVisualEffectView!
   @IBOutlet weak var closeButtonView: NSView!
   @IBOutlet weak var closeButtonBackgroundViewVE: NSVisualEffectView!
@@ -119,6 +124,21 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
     volumePopover.delegate = self
   }
 
+  override internal func setMaterial(_ theme: Preference.Theme) {
+    guard let window = window else { return }
+
+    if #available(macOS 10.14, *) {} else {
+      let (appearance, material) = Utility.getAppearanceAndMaterial(from: theme)
+
+      [backgroundView, closeButtonBackgroundViewVE, playlistWrapperView].forEach {
+        $0?.appearance = appearance
+        $0?.material = material
+      }
+
+      window.appearance = appearance
+    }
+  }
+
   func windowWillClose(_ notification: Notification) {
     player.switchedToMiniPlayerManually = false
     player.switchedBackFromMiniPlayerManually = false
@@ -148,6 +168,21 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
   override func otherMouseUp(with event: NSEvent) {
     guard !isMouseEvent(event, inAnyOf: [backgroundView]) else { return }
     super.otherMouseUp(with: event)
+  }
+  
+  override func scrollWheel(with event: NSEvent) {
+    if isMouseEvent(event, inAnyOf: [playSlider]) && playSlider.isEnabled {
+      seekOverride = true
+    } else if isMouseEvent(event, inAnyOf: [volumeSliderView]) && volumeSlider.isEnabled {
+    volumeOverride = true
+    } else {
+      guard !isMouseEvent(event, inAnyOf: [backgroundView]) else { return }
+    }
+
+    super.scrollWheel(with: event)
+
+    seekOverride = false
+    volumeOverride = false
   }
 
   private func showControl() {
@@ -198,30 +233,21 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
       }
     }
   }
+  
+  // MARK: - Window delegate: Size
 
   func windowDidResize(_ notification: Notification) {
     guard let window = window, !window.inLiveResize else { return }
-    self.player.mainWindow.videoView.videoLayer.draw()
+    videoView.videoLayer.draw()
   }
+  
+  // MARK: - Window delegate: Activeness status
 
-  func windowDidBecomeMain(_ notification: Notification) {
+  override func windowDidBecomeMain(_ notification: Notification) {
+    super.windowDidBecomeMain(notification)
+
     titleLabel.scroll()
     artistAlbumLabel.scroll()
-  }
-
-  override internal func setMaterial(_ theme: Preference.Theme) {
-    guard let window = window else { return }
-
-    if #available(macOS 10.14, *) {} else {
-      let (appearance, material) = Utility.getAppearanceAndMaterial(from: theme)
-
-      [backgroundView, closeButtonBackgroundViewVE, playlistWrapperView].forEach {
-        $0?.appearance = appearance
-        $0?.material = material
-      }
-
-      window.appearance = appearance
-    }
   }
 
   // MARK: - NSPopoverDelegate
@@ -263,7 +289,6 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
 
   func updateVideoSize() {
     guard let window = window else { return }
-    let videoView = player.mainWindow.videoView
     let (width, height) = player.videoSizeForDisplay
     let aspect = CGFloat(width) / CGFloat(height)
     let currentHeight = videoView.frame.height
@@ -280,7 +305,6 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
     if let constraint = videoViewAspectConstraint {
       constraint.isActive = false
     }
-    let videoView = player.mainWindow.videoView
     videoViewAspectConstraint = NSLayoutConstraint(item: videoView, attribute: .width, relatedBy: .equal,
                                                    toItem: videoView, attribute: .height, multiplier: aspect, constant: 0)
     videoViewAspectConstraint?.isActive = true
@@ -319,7 +343,7 @@ class MiniPlayerWindowController: PlayerWindowController, NSWindowDelegate, NSPo
     controlViewTopConstraint.isActive = !isVideoVisible
     closeButtonBackgroundViewVE.isHidden = !isVideoVisible
     closeButtonBackgroundViewBox.isHidden = isVideoVisible
-    let videoViewHeight = round(player.mainWindow.videoView.frame.height)
+    let videoViewHeight = round(videoView.frame.height)
     if isVideoVisible {
       var frame = window.frame
       frame.size.height += videoViewHeight
