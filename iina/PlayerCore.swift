@@ -305,6 +305,7 @@ class PlayerCore: NSObject {
     }
 
     mpv.mpvInit()
+    events.emit(.mpvInitialized)
 
     if !getAudioDevices().contains(where: { $0["name"] == Preference.string(for: .audioDevice)! }) {
       setAudioDevice("auto")
@@ -405,6 +406,8 @@ class PlayerCore: NSObject {
         miniPlayer.togglePlaylist(self)
       }
     }
+    
+    events.emit(.musicModeChanged, data: true)
   }
 
   func switchBackFromMiniPlayer(automatically: Bool, showMainWindow: Bool = true) {
@@ -441,6 +444,8 @@ class PlayerCore: NSObject {
     mainWindow.videoView.videoLayer.draw(forced: true)
 
     mainWindow.updateTitle()
+    
+    events.emit(.musicModeChanged, data: false)
   }
 
   // MARK: - MPV commands
@@ -570,12 +575,14 @@ class PlayerCore: NSObject {
   func toggleFileLoop() {
     let isLoop = mpv.getFlag(MPVOption.PlaybackControl.loopFile)
     mpv.setFlag(MPVOption.PlaybackControl.loopFile, !isLoop)
+    events.emit(.playlistLoopChanged, data: !isLoop)
   }
 
   func togglePlaylistLoop() {
     let loopStatus = mpv.getString(MPVOption.PlaybackControl.loopPlaylist)
     let isLoop = (loopStatus == "inf" || loopStatus == "force")
     mpv.setString(MPVOption.PlaybackControl.loopPlaylist, isLoop ? "no" : "inf")
+    events.emit(.playlistLoopChanged, data: !isLoop)
   }
 
   func toggleShuffle() {
@@ -1041,6 +1048,7 @@ class PlayerCore: NSObject {
       }
       self.autoSearchOnlineSub()
     }
+    events.emit(.fileStarted)
   }
 
   /** This function is called right after file loaded. Should load all meta info here. */
@@ -1093,6 +1101,7 @@ class PlayerCore: NSObject {
       }
     }
     postNotification(.iinaFileLoaded)
+    events.emit(.fileLoaded, data: info.currentURL ?? "")
   }
 
   func playbackRestarted() {
@@ -1652,6 +1661,7 @@ extension PlayerCore: FFmpegControllerDelegate {
           ThumbnailCache.write(self.info.thumbnails, forName: cacheName, forVideo: self.info.currentURL)
         }
       }
+      events.emit(.thumbnailsReady)
     }
   }
 }
